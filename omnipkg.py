@@ -3,7 +3,6 @@ import os
 import sys
 import subprocess
 
-
 class OmniPkg(dotbot.Plugin):
     # The supported directives
     _installDirective = "omnipkg-install"
@@ -84,10 +83,10 @@ class OmniPkg(dotbot.Plugin):
         self._upgradeCommand = "sudo apt-get dist-upgrade -y"
 
     def _setupPacman(self):
-        baseCommand = "sudo pacman --noconfirm"
+        baseCommand = "sudo pacman --noconfirm %s"
         self._installCommand = baseCommand % "-S"
+        self._existsCheck = "pacman -Si"
         self._updateCommand = baseCommand % "-Syy"
-        # no difference here between upgrade and dist-upgrade
         self._upgradeCommand = baseCommand % "-Syu"
 
     def _doInstall(self, pkgList):
@@ -95,8 +94,21 @@ class OmniPkg(dotbot.Plugin):
             # append the package to the install command and run the command
             success = True
             for pkg in pkgList:
-                self._log.info("Installing package: %s" % pkg)
-                if not self._pkgExists(pkg):
+                if isinstance(pkg, str):
+                    self._log.info("Installing package: %s" % pkg)
+                    exists = self._pkgExists(pkg)
+                elif isinstance(pkg, list):
+                    self._log.info("Selecting package from {}".format(pkg))
+                    exists, pkg = self._getPkgName(pkg)
+                    if exists:
+                        self._log.info("Found package: %s - Installing" % pkg)
+                else:
+                    # invalid data
+                    # this should be handled above the plugin level
+                    raise ValueError("Invalid data given to omnipkg-install")
+
+                if not exists:
+                    # package doesn't exist
                     self._log.lowinfo("Skipping installation as package does not exist")
                 else:
                     cmd = "%s %s" % (self._installCommand, pkg)
@@ -133,6 +145,13 @@ class OmniPkg(dotbot.Plugin):
         else:
             # assume the package exists if no check
             return True
+
+    def _getPkgName(self, pkgList):
+        for pkg in pkgList:
+            if self._pkgExists(pkg):
+                return (True, pkg)
+
+        return (False, "")
 
     def _bootstrap(self, cmd, silent=True):
         with open(os.devnull, 'w') as devnull:
