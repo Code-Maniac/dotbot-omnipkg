@@ -78,12 +78,13 @@ class OmniPkg(dotbot.Plugin):
         self._upgradeCommand = "brew upgrade"
 
     def _setupAptGet(self):
-        self._installCommand = "sudo apt-get install -y %s"
+        self._installCommand = "sudo apt-get install -y"
+        self._existsCheck = "apt-cache show"
         self._updateCommand = "sudo apt-get update"
         self._upgradeCommand = "sudo apt-get dist-upgrade -y"
 
     def _setupPacman(self):
-        baseCommand = "sudo pacman --noconfirm %s"
+        baseCommand = "sudo pacman --noconfirm"
         self._installCommand = baseCommand % "-S"
         self._updateCommand = baseCommand % "-Syy"
         # no difference here between upgrade and dist-upgrade
