@@ -124,6 +124,7 @@ class OmniPkg(dotbot.Plugin):
 
     def _doUpdate(self):
         if self._updateCommand != "":
+            self._log.info("Begin Update <%s>" % self._updateCommand)
             return self._bootstrap(self._updateCommand)
         else:
             # there doesn't have to be an update command
