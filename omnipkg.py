@@ -3,12 +3,12 @@ import os
 import sys
 import subprocess
 
+
 class OmniPkg(dotbot.Plugin):
     # The supported directives
     _installDirective = "omnipkg-install"
     _updateDirective = "omnipkg-update"
     _upgradeDirective = "omnipkg-upgrade"
-    _distUpgradeDirective = "omnipkg-dist-upgrade"
 
     # The name of the package manager that has been found
     _packageManagerName = ""
@@ -17,7 +17,9 @@ class OmniPkg(dotbot.Plugin):
     _installCommand = ""
     _updateCommand = ""
     _upgradeCommand = ""
-    _distUpgradeCommand = ""
+
+    # Command used to check that the package exists before installing it
+    _existsCheck = ""
 
     def __init__(self, context):
         super(OmniPkg, self).__init__(context)
@@ -36,8 +38,7 @@ class OmniPkg(dotbot.Plugin):
         return directive in (
             self._installDirective,
             self._updateDirective,
-            self._upgradeDirective,
-            self._distUpgradeDirective)
+            self._upgradeDirective)
 
     def handle(self, directive, data):
         # select the directive to run
@@ -45,10 +46,8 @@ class OmniPkg(dotbot.Plugin):
             return self._doInstall(data)
         elif directive == self._updateDirective:
             return self._doUpdate()
-        elif directive == self._updateDirective:
+        elif directive == self._upgradeDirective:
             return self._doUpgrade()
-        elif directive == self._distUpgradeDirective:
-            return self._doDistUpgrade()
         else:
             raise ValueError('OmniPkg cannot handle directive %s' % directive)
 
@@ -74,23 +73,21 @@ class OmniPkg(dotbot.Plugin):
 
     def _setupBrew(self):
         # add a brew installation if not already installed
-
         self._installCommand = "brew install"
+        self._existsCheck = "brew ls"
         self._upgradeCommand = "brew upgrade"
 
     def _setupAptGet(self):
-        self._installCommand = "apt-get install -y"
-        self._updateCommand = "apt-get update"
-        self._upgradeCommand = "apt-get upgrade -y"
-        self._distUpgradeCommand = "apt-get dist-upgrade -y"
+        self._installCommand = "sudo apt-get install -y %s"
+        self._updateCommand = "sudo apt-get update"
+        self._upgradeCommand = "sudo apt-get dist-upgrade -y"
 
     def _setupPacman(self):
-        baseCommand = "pacman --noconfirm %s"
+        baseCommand = "sudo pacman --noconfirm %s"
         self._installCommand = baseCommand % "-S"
         self._updateCommand = baseCommand % "-Syy"
         # no difference here between upgrade and dist-upgrade
         self._upgradeCommand = baseCommand % "-Syu"
-        self._distUpgradeCommand = baseCommand % "-Syu"
 
     def _doInstall(self, pkgList):
         if self._installCommand != "":
@@ -98,11 +95,14 @@ class OmniPkg(dotbot.Plugin):
             success = True
             for pkg in pkgList:
                 self._log.info("Installing package: %s" % pkg)
-                cmd = self._installCommand + " " + pkg
-                result = self._bootstrap(cmd)
-                if not result:
-                    success = False  # if one fails we still continue
-                    self._log.warning("Package " + pkg + " failed to install")
+                if not self._pkgExists(pkg):
+                    self._log.lowinfo("Skipping installation as package does not exist")
+                else:
+                    cmd = "%s %s" % (self._installCommand, pkg)
+                    result = self._bootstrap(cmd)
+                    if not result:
+                        success = False  # if one fails we still continue
+                        self._log.warning("Package %s failed to install" % pkg)
 
             return success
         else:
@@ -118,30 +118,35 @@ class OmniPkg(dotbot.Plugin):
 
     def _doUpgrade(self):
         if self._upgradeCommand != "":
-            return self._bootstrap(self._upgradeCommand)
+            self._log.info("Begin Upgrade <%s>" % self._upgradeCommand)
+            return self._bootstrap(self._upgradeCommand, silent=False)
         else:
             # there doesn't have to be an upgrade command
             return True
 
-    def _doDistUpgrade(self):
-        if self._distUpgradeCommand != "":
-            return self._bootstrap(self._distUpgradeCommand)
+    def _pkgExists(self, pkg):
+        if self._existsCheck != "":
+            cmd = "%s %s" % (self._existsCheck, pkg)
+            result = self._bootstrap(cmd)
+            return result
         else:
-            # there doesn't have to be a dist upgrade command
+            # assume the package exists if no check
             return True
 
-    def _bootstrap(self, cmd):
+    def _bootstrap(self, cmd, silent=True):
         with open(os.devnull, 'w') as devnull:
-            stdin = stdout = stderr = devnull
+            if silent:
+                stdout = stderr = devnull
+            else:
+                stdout = stderr = None
+
             result = subprocess.call(
                 cmd,
                 shell=True,
-                stdin=stdin,
                 stdout=stdout,
                 stderr=stderr,
                 cwd=self._context.base_directory())
-            if(result != 0):
-                return False
+            return result == 0
         return True
 
     def _bootstrapBrew(self):
