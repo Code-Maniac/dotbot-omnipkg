@@ -58,7 +58,8 @@ class OmniPkg(dotbot.Plugin):
         # the following are the supported package managers for now
         managers = [
             ("apt-get", "/etc/debian_version", "_setupAptGet"),
-            ("pacman", "/etc/arch-release", "_setupPacman")
+            ("pacman", "/etc/arch-release", "_setupPacman"),
+            ("dnf", "/etc/redhat-release", "_setupDnf")
         ]
         self._selectPackageManager(managers)
 
@@ -88,6 +89,12 @@ class OmniPkg(dotbot.Plugin):
         self._existsCheck = "pacman -Si"
         self._updateCommand = baseCommand % "-Syy"
         self._upgradeCommand = baseCommand % "-Syu"
+
+    def _setupDnf(self):
+        self._installCommand = "sudo dnf install -y"
+        self._existsCheck = "dnf list"
+        self._updateCommand = "sudo dnf check-update"
+        self._upgradeCommand = "sudo dnf upgrade -y"
 
     def _doInstall(self, pkgList):
         if self._installCommand != "":
