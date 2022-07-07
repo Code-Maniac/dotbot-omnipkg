@@ -4,10 +4,13 @@ import sys
 import subprocess
 
 class OmniPkg(dotbot.Plugin):
-    # The supported directives
-    _installDirective = "omnipkg-install"
-    _updateDirective = "omnipkg-update"
-    _upgradeDirective = "omnipkg-upgrade"
+    # only support the omnipkg directive
+    _mainDirective = "omnipkg"
+
+    # omnipkg directive should include subdirectives underneath it as such
+    _installSubDirective = "install"
+    _updateSubDirective = "update"
+    _upgradeSubDirective = "upgrade"
 
     # The name of the package manager that has been found
     _packageManagerName = ""
@@ -34,21 +37,55 @@ class OmniPkg(dotbot.Plugin):
 
     def can_handle(self, directive):
         # only allow the directives listed above
-        return directive in (
-            self._installDirective,
-            self._updateDirective,
-            self._upgradeDirective)
+        return directive in (self._mainDirective)
 
     def handle(self, directive, data):
-        # select the directive to run
-        if directive == self._installDirective:
-            return self._doInstall(data)
-        elif directive == self._updateDirective:
-            return self._doUpdate()
-        elif directive == self._upgradeDirective:
-            return self._doUpgrade()
-        else:
-            raise ValueError('OmniPkg cannot handle directive %s' % directive)
+        # first process the subdirectives then run each
+
+        # for each item in data, identify the sub directive and get the data
+        # for the sub directive
+        _doUpdate = False
+        _updateStatus = True
+
+        _doUpgrade = False
+        _upgradeStatus = True
+
+        _installData = []
+        _installStatus = True
+
+        for sd in data:
+            if isinstance(sd, str):
+                if sd == self._updateSubDirective:
+                    _doUpdate = True
+                elif sd == self._upgradeSubDirective:
+                    _doUpgrade = True
+            elif isinstance(sd, object):
+                if self._installSubDirective in sd:
+                    _installData = sd[self._installSubDirective]
+
+        # execute the processed sub directives and report any errors but
+        # continue for each sub directive
+        if _doUpdate:
+            _updateStatus = self._doUpdate()
+            if not _updateStatus:
+                self._printSubDirectiveError(self._updateSubDirective)
+
+
+        _installStatus = self._doInstall(_installData)
+        if not _installStatus:
+            self._printSubDirectiveError(self._installSubDirective)
+
+
+        if _doUpgrade:
+            _upgradeStatus = self._doUpgrade()
+            if not _upgradeStatus:
+                self._printSubDirectiveError(self._upgradeSubDirective)
+
+        return _updateStatus and _installStatus and _upgradeStatus
+
+    def _printSubDirectiveError(self, sdName):
+        self._log.error("Error executing %s subdirective" % sdName)
+
 
     def _setupMacOS(self):
         self._setupBrew()
