@@ -15,6 +15,13 @@ class OmniPkg(dotbot.Plugin):
     # The name of the package manager that has been found
     _packageManagerName = ""
 
+    # The name of the platform
+    _platformName = ""
+
+    # The lookup name in optional package dictionaries
+    _dictLookup = ""
+    _dictLookupElse = "else"
+
     # commands are setup based on the platform and installed package manager
     _installCommand = ""
     _updateCommand = ""
@@ -70,11 +77,9 @@ class OmniPkg(dotbot.Plugin):
             if not _updateStatus:
                 self._printSubDirectiveError(self._updateSubDirective)
 
-
         _installStatus = self._doInstall(_installData)
         if not _installStatus:
             self._printSubDirectiveError(self._installSubDirective)
-
 
         if _doUpgrade:
             _upgradeStatus = self._doUpgrade()
@@ -86,29 +91,36 @@ class OmniPkg(dotbot.Plugin):
     def _printSubDirectiveError(self, sdName):
         self._log.error("Error executing %s subdirective" % sdName)
 
-
     def _setupMacOS(self):
+        self._platformName = "mac"
         self._setupBrew()
 
     def _setupLinux(self):
+        self._platformName = "linux"
+
         # check the package manager that is installed and use that
         # the following are the supported package managers for now
+        # name, dict lookup, file, setup function
         managers = [
-            ("apt-get", "/etc/debian_version", "_setupAptGet"),
-            ("pacman", "/etc/arch-release", "_setupPacman"),
-            ("dnf", "/etc/redhat-release", "_setupDnf")
+            ("apt-get", "apt", "/etc/debian_version", "_setupAptGet"),
+            ("pacman", "pac", "/etc/arch-release", "_setupPacman"),
+            ("dnf", "dnf", "/etc/redhat-release", "_setupDnf")
         ]
         self._selectPackageManager(managers)
 
     def _selectPackageManager(self, packageManagers):
-        for name, file, func in packageManagers:
+        for name, lookup, file, func in packageManagers:
             if os.path.exists(file):
                 # set the package manager name and run the setup function
                 self._packageManagerName = name
+                self._dictLookup = lookup
                 eval("self." + func + "()")
                 break
 
     def _setupBrew(self):
+        self._packageManagerName = "brew"
+        self._dictLookup = self._packageManagerName
+
         # add a brew installation if not already installed
         self._installCommand = "brew install"
         self._existsCheck = "brew ls"
@@ -141,18 +153,28 @@ class OmniPkg(dotbot.Plugin):
                 if isinstance(pkg, str):
                     self._log.info("Installing package: %s" % pkg)
                     exists = self._pkgExists(pkg)
+                    existsInDict = True
                 elif isinstance(pkg, list):
                     self._log.info("Selecting package from {}".format(pkg))
-                    exists, pkg = self._getPkgName(pkg)
+                    exists, pkg = self._getPkgNameFromList(pkg)
+                    existsInDict = True
                     if exists:
                         self._log.info("Found package: %s - Installing" % pkg)
+                elif isinstance(pkg, dict):
+                    self._log.info("Selecting optional package from {}".format(pkg))
+                    existsInDict, exists, pkg, directive = self._getPkgNameFromDict(pkg)
+                    if exists:
+                        self._log.info("Found package: %s for %s - Installing" % (pkg, directive))
                 else:
                     # invalid data
                     # this should be handled above the plugin level
                     raise ValueError("Invalid data given to omnipkg-install")
 
-                if not exists:
-                    # package doesn't exist
+                # first check that item exists in data (only relevant for dictionary data)
+                if not existsInDict:
+                    self._log.lowinfo("Skipping installation as no package specified for %s or %s" % (self._packageManagerName, self._platformName))
+                    # otherwise skip if package doesn't exist
+                elif not exists:
                     self._log.lowinfo("Skipping installation as package does not exist")
                 else:
                     cmd = "%s %s" % (self._installCommand, pkg)
@@ -191,12 +213,29 @@ class OmniPkg(dotbot.Plugin):
             # assume the package exists if no check
             return True
 
-    def _getPkgName(self, pkgList):
+    def _getPkgNameFromList(self, pkgList):
         for pkg in pkgList:
             if self._pkgExists(pkg):
                 return (True, pkg)
 
         return (False, "")
+
+    def _getPkgNameFromDict(self, pkgDict):
+        # first check that there is an item for the current package manager
+        # otherwise check for a platform directive (linux or mac)
+        # otherwise check for an else directive
+        # otherwise we don't install for this package
+        if self._dictLookup in pkgDict:
+            pkg = pkgDict[self._dictLookup]
+            return (True, self._pkgExists(pkg), pkg, self._dictLookup)
+        elif self._platformName in pkgDict:
+            pkg = pkgDict[self._platformName]
+            return (True, self._pkgExists(pkg), pkg, self._platformName)
+        elif self._dictLookupElse in pkgDict:
+            pkg = pkgDict[self._dictLookupElse]
+            return (True, self._pkgExists(pkg), pkg, self._dictLookupElse)
+        else:
+            return (False, False, None, None)
 
     def _bootstrap(self, cmd, silent=True):
         with open(os.devnull, 'w') as devnull:
