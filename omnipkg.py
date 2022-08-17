@@ -21,6 +21,7 @@ class OmniPkg(dotbot.Plugin):
     # The lookup name in optional package dictionaries
     _dictLookup = ""
     _dictLookupElse = "else"
+    _dictLookupRequireGUI = "require_gui"
 
     # commands are setup based on the platform and installed package manager
     _installCommand = ""
@@ -29,6 +30,9 @@ class OmniPkg(dotbot.Plugin):
 
     # Command used to check that the package exists before installing it
     _existsCheck = ""
+
+    # flag for if a gui is installed. Default to True, only checked if on linux
+    _guiInstalled = True
 
     def __init__(self, context):
         super(OmniPkg, self).__init__(context)
@@ -98,6 +102,9 @@ class OmniPkg(dotbot.Plugin):
     def _setupLinux(self):
         self._platformName = "linux"
 
+        # check if gui is installed on this linux
+        self._guiInstalled = os.getenv('XDG_CURRENT_DESKTOP') is not None
+
         # check the package manager that is installed and use that
         # the following are the supported package managers for now
         # name, dict lookup, file, setup function
@@ -154,16 +161,18 @@ class OmniPkg(dotbot.Plugin):
                     self._log.info("Installing package: %s" % pkg)
                     exists = self._pkgExists(pkg)
                     existsInDict = True
+                    requireGUI = False
                 elif isinstance(pkg, list):
                     self._log.info("Selecting package from {}".format(pkg))
                     exists, pkg = self._getPkgNameFromList(pkg)
                     existsInDict = True
+                    requireGUI = False
                     if exists:
                         self._log.info("Found package: %s - Installing" % pkg)
                 elif isinstance(pkg, dict):
                     self._log.info("Selecting optional package from {}".format(pkg))
-                    existsInDict, exists, pkg, directive = self._getPkgNameFromDict(pkg)
-                    if exists:
+                    existsInDict, exists, requireGUI, pkg, directive = self._getPkgNameFromDict(pkg)
+                    if exists and not (requireGUI and not self._guiInstalled):
                         self._log.info("Found package: %s for %s - Installing" % (pkg, directive))
                 else:
                     # invalid data
@@ -176,6 +185,8 @@ class OmniPkg(dotbot.Plugin):
                     # otherwise skip if package doesn't exist
                 elif not exists:
                     self._log.lowinfo("Skipping installation as package does not exist")
+                elif requireGUI and not self._guiInstalled:
+                    self._log.lowinfo("Skipping installation as package requires an installed GUI")
                 else:
                     cmd = "%s %s" % (self._installCommand, pkg)
                     result = self._bootstrap(cmd)
@@ -221,21 +232,28 @@ class OmniPkg(dotbot.Plugin):
         return (False, "")
 
     def _getPkgNameFromDict(self, pkgDict):
+        # check if require_gui flag is set to true but only use it if platform
+        # is linux
+        if self._platformName == "linux" and self._dictLookupRequireGUI in pkgDict:
+            requireGUI = pkgDict[self._dictLookupRequireGUI]
+        else:
+            requireGUI = False
+
         # first check that there is an item for the current package manager
         # otherwise check for a platform directive (linux or mac)
         # otherwise check for an else directive
         # otherwise we don't install for this package
         if self._dictLookup in pkgDict:
             pkg = pkgDict[self._dictLookup]
-            return (True, self._pkgExists(pkg), pkg, self._dictLookup)
+            return (True, self._pkgExists(pkg), requireGUI, pkg, self._dictLookup)
         elif self._platformName in pkgDict:
             pkg = pkgDict[self._platformName]
-            return (True, self._pkgExists(pkg), pkg, self._platformName)
+            return (True, self._pkgExists(pkg), requireGUI, pkg, self._platformName)
         elif self._dictLookupElse in pkgDict:
             pkg = pkgDict[self._dictLookupElse]
-            return (True, self._pkgExists(pkg), pkg, self._dictLookupElse)
+            return (True, self._pkgExists(pkg), requireGUI, pkg, self._dictLookupElse)
         else:
-            return (False, False, None, None)
+            return (False, False, requireGUI, None, None)
 
     def _bootstrap(self, cmd, silent=True):
         with open(os.devnull, 'w') as devnull:
