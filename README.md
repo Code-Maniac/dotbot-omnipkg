@@ -93,6 +93,16 @@ The following filters are supported:
 
 Priority is given to package manager first, then platform, then else
 
+Additionally packages can be restricted to only install on systems with an installed gui.
+
+```
+- omnipkg:
+    - install: [
+        { linux: gimp, require_gui: true }
+    ]
+```
+Above installs gimp only on a system with an installed gui. It will not install in WSL or a docker image as an example.
+
 # Roadmap
 1. Add directive to support adding new PPA repositories
 2. Add support for additional package managers - ```zypp```, ```emerge``` etc
