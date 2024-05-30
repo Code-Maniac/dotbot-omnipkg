@@ -130,25 +130,25 @@ class OmniPkg(dotbot.Plugin):
 
         # add a brew installation if not already installed
         self._installCommand = "brew install"
-        self._existsCheck = "brew ls"
+        self._existsCheck = "brew search /^$PKG_NAME$/"
         self._upgradeCommand = "brew upgrade"
 
     def _setupAptGet(self):
         self._installCommand = "sudo apt-get install -y"
-        self._existsCheck = "apt-cache show"
+        self._existsCheck = "apt-cache show $PKG_NAME"
         self._updateCommand = "sudo apt-get update"
         self._upgradeCommand = "sudo apt-get dist-upgrade -y"
 
     def _setupPacman(self):
         baseCommand = "sudo pacman --noconfirm %s"
         self._installCommand = baseCommand % "-S"
-        self._existsCheck = "pacman -Si"
+        self._existsCheck = "pacman -Si $PKG_NAME"
         self._updateCommand = baseCommand % "-Syy"
         self._upgradeCommand = baseCommand % "-Syu"
 
     def _setupDnf(self):
         self._installCommand = "sudo dnf install -y"
-        self._existsCheck = "dnf list"
+        self._existsCheck = "dnf list $PKG_NAME"
         self._updateCommand = "sudo dnf check-update"
         self._upgradeCommand = "sudo dnf upgrade -y"
 
@@ -217,9 +217,8 @@ class OmniPkg(dotbot.Plugin):
 
     def _pkgExists(self, pkg):
         if self._existsCheck != "":
-            cmd = "%s %s" % (self._existsCheck, pkg)
-            result = self._bootstrap(cmd)
-            return result
+            cmd = self._existsCheck.replace("$PKG_NAME", pkg)
+            return self._bootstrap(cmd)
         else:
             # assume the package exists if no check
             return True
